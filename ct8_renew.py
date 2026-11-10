@@ -84,17 +84,15 @@ async def login_and_get_expiry(username, password, panel):
             await page.evaluate('(el) => { el.value = ""; }', user_input)
         await page.type('#id_username', username)
         await page.type('#id_password', password)
-        btn = await page.querySelector('#submit')
+        btn = await page.querySelector('form[data-login-form] button[type="submit"]')
         if not btn:
-            raise Exception('找不到登录按钮 #submit')
+            raise Exception('找不到登录按钮')
         await btn.click()
-        await page.waitForNavigation({'timeout': 60000})
-        logged_in = await page.evaluate(
-            '''() => document.querySelector('a[href="/logout/"]') !== null'''
-        )
-        if not logged_in:
-            return False, ''
-        # 到面板首页抓“Valid until ...”有效期
+        try:
+            await page.waitForNavigation({'timeout': 60000})
+        except Exception:
+            pass
+        # 到面板首页抓“Valid until ...”有效期；能抓到即登录成功
         expiry = ''
         try:
             await page.goto(f'https://{panel}/next/', {'timeout': 60000})
@@ -108,7 +106,16 @@ async def login_and_get_expiry(username, password, panel):
                     expiry += f'（剩余 {days.group(1)} 天）'
         except Exception as e:
             print(f'抓取有效期失败（不影响登录结果）: {e}')
-        return True, expiry
+        logged_in = bool(expiry)
+        if not logged_in:
+            # 兜底：旧版面板用 logout 链接判断
+            try:
+                logged_in = await page.evaluate(
+                    '''() => document.querySelector('a[href="/logout/"]') !== null'''
+                )
+            except Exception:
+                logged_in = False
+        return logged_in, expiry
     finally:
         if page:
             await page.close()
