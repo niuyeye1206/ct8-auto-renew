@@ -87,6 +87,17 @@ async def login_and_get_expiry(username, password, panel):
             await page.evaluate('(el) => { el.value = ""; }', pass_input)
         await page.type('#id_username', username)
         await page.type('#id_password', password)
+        # 诊断：确认填写是否真的进了字段（只记长度，不记密码值）
+        try:
+            dbg = await page.evaluate('''() => {
+                const u = document.querySelector('#id_username');
+                const p = document.querySelector('#id_password');
+                const inputs = Array.from(document.querySelectorAll('form[data-login-form] input')).map(i => i.name + ':' + i.type + ':' + (i.value ? 'filled(' + i.value.length + ')' : 'empty'));
+                return {u_len: u ? u.value.length : -1, p_len: p ? p.value.length : -1, inputs: inputs};
+            }''')
+            print(f"填写后检查：username 长度={dbg['u_len']}，password 长度={dbg['p_len']}，表单字段={dbg['inputs']}")
+        except Exception as e:
+            print(f'填写后检查失败：{e}')
         async def is_logged_in():
             """已登录的可靠判断：不在登录页，且（在面板首页或页面有退出登录链接）。
             注意：只看 URL 的 path 部分，?next=/next/ 这种查询参数不算。"""
