@@ -1,88 +1,41 @@
-## serv00与ct8自动化批量保号，每3天自动登录一次面板，并且发送消息到Telegram
+# ct8 自动续期
 
-## 视频教程看这里
-[免费白嫖10年VPS服务器serv00 并且一键部署自己的专属自建Vless节点 ｜小白教程｜自动化批量保号](https://youtu.be/QnlzpvDl_mo)
+ct8.pl 免费主机自动登录保活：每 60 天左右登录一次 DevilWEB 面板，登录本身就是续期（90 天内登录一次即可）。
 
-利用github Action以及python脚本实现
+> Fork 自 [tina25311/serv00-auto-login](https://github.com/tina25311/serv00-auto-login)，改成单账号 ct8 专用、每 2 个月跑一次、TG 通知。
 
-🙏🙏🙏点个Star！！Star！！Star！！
+## 续期机制（已核实）
 
-交流群：https://t.me/yxjsjl
+- ct8 条款第 12 条：90 天内没有通过 DevilWEB 面板或 SSH 正确登录，账号自动删除。
+- 面板首页的 `Valid until` 就是 90 天倒计时，每次登录刷新。
+- **不需要走 ADMIN.NET.PL 计费面板**（`platnosci.admin.net.pl`，那是另一套账号，免费用户很可能没有）。本仓库不碰计费面板，不走任何代理，GitHub Runner 直连 `panel.ct8.pl`。
 
-### 将代码fork到你的仓库并运行的操作步骤
+## 定时规则
 
-#### 1. Fork 仓库
+- 每月 1 号 UTC 22:30（北京时间次日 06:30）自动跑。
+- **奇数月**（1/3/5/7/9/11 月）：登录面板续期，约 60 天一次，每次间隔都小于 90 天。
+- **偶数月**：不登录，只更新 `time.txt` 提交一次，防止仓库 60 天无活动导致 GitHub 停用定时任务。
+- 每次登录成功/失败都发 TG 通知到 `@senmuse_bot`，成功时带上新的有效期；脚本异常退出时 workflow 会发一条兜底通知。
 
-1. **访问原始仓库页面**：
-    - 打开你想要 fork 的 GitHub 仓库页面。
+## 配置 Secrets
 
-2. **Fork 仓库**：
-    - 点击页面右上角的 "Fork" 按钮，将仓库 fork 到你的 GitHub 账户下。
+仓库页面 → `Settings` → `Secrets and variables` → `Actions` → `New repository secret`，逐个添加：
 
-#### 2. 设置 GitHub Secrets
+| Secret 名 | 填什么 |
+|---|---|
+| `CT8_USERNAME` | ct8 面板账号：`asen0122` |
+| `CT8_PASSWORD` | ct8 面板密码（激活邮件里系统发的那个） |
+| `TG_BOT_TOKEN` | Telegram Bot Token（`@senmuse_bot` 用的那个，和 katabump-renew 仓库里同一个值） |
+| `TG_CHAT_ID` | Telegram Chat ID（和 katabump-renew 仓库里同一个值） |
 
-1. **创建 Telegram Bot**
-    - 在 Telegram 中找到 `@BotFather`，创建一个新 Bot，并获取 API Token。
-    - 获取到你的 Chat ID 方法一，在[一休技术交流群](https://t.me/yxjsjl)里发送`/id@KinhRoBot`获取，返回用户信息中的`ID`就是Chat ID
-    - 获取到你的 Chat ID 方法二，可以通过向 Bot 发送一条消息，然后访问 `https://api.telegram.org/bot<your_bot_token>/getUpdates` 找到 Chat ID。
+密码不要写进代码、不要发在任何聊天记录里，只填在 Secrets 里。
 
-2. **配置 GitHub Secrets**
-    - 转到你 fork 的仓库页面。
-    - 点击 `Settings`，然后在左侧菜单中选择 `Secrets`。
-    - 添加以下 Secrets：
-        - `ACCOUNTS_JSON`: 包含账号信息的 JSON 数据。例如：
-        - 
-          ```json
-          [
-            {"username": "serv00的账号", "password": "serv00的密码", "panel": "panel6.serv00.com"},
-            {"username": "ct8的账号", "password": "ct8的密码", "panel": "panel.ct8.pl"},
-            {"username": "user2", "password": "password2", "panel": "panel6.serv00.com"}
-          ]
-          ```
-        - `TELEGRAM_BOT_TOKEN`: 你的 Telegram Bot 的 API Token。
-        - `TELEGRAM_CHAT_ID`: 你的 Telegram Chat ID。
+## 手动运行
 
-    - **获取方法**：
-        - 在 Telegram 中创建 Bot，并获取 API Token 和 Chat ID。
-        - 在 GitHub 仓库的 Secrets 页面添加这些值，确保它们安全且不被泄露。
+仓库页面 → `Actions` → 左侧选 `ct8 自动续期` → `Run workflow` → `Run workflow`。11 月是奇数月，手动跑会真的登录一次。
 
-#### 3. 启动 GitHub Actions
+## 文件
 
-1. **配置 GitHub Actions**
-    - 在你的 fork 仓库中，进入 `Actions` 页面。
-    - 如果 Actions 没有自动启用，点击 `Enable GitHub Actions` 按钮以激活它。
-
-2. **运行工作流**
-    - GitHub Actions 将会根据你设置的定时任务（例如每三天一次）自动运行脚本。
-    - 如果需要手动触发，可以在 Actions 页面手动运行工作流。
-
-#### 示例 Secrets 和获取方法总结
-
-- **TELEGRAM_BOT_TOKEN**
-    - 示例值: `1234567890:ABCDEFghijklmnopQRSTuvwxyZ`
-    - 获取方法: 在 Telegram 中使用 `@BotFather` 创建 Bot 并获取 API Token。
-
-- **TELEGRAM_CHAT_ID**
-    - 示例值: `1234567890`
-    - 获取方法: 发送一条消息给你的 Bot，然后访问 `https://api.telegram.org/bot<your_bot_token>/getUpdates` 获取 Chat ID。
-
-- **ACCOUNTS_JSON**
-    - 示例值:
-      ```json
-      [
-            {"username": "serv00的账号", "password": "serv00的密码", "panel": "panel6.serv00.com"},
-            {"username": "ct8的账号", "password": "ct8的密码", "panel": "panel.ct8.pl"},
-            {"username": "user2", "password": "password2", "panel": "panel6.serv00.com"}
-          ]
-      ```
-    - 获取方法: 创建一个包含serv00账号信息的 JSON 文件，并将其内容添加到 GitHub 仓库的 Secrets 中。
-
-### 注意事项
-
-- **保密性**: Secrets 是敏感信息，请确保不要将它们泄露到公共代码库或未授权的人员。
-- **更新和删除**: 如果需要更新或删除 Secrets，可以通过仓库的 Secrets 页面进行管理。
-
-通过以上步骤，你就可以成功将代码 fork 到你的仓库下并运行它了。如果需要进一步的帮助或有其他问题，请随时告知！
-
-## 🌟🌟🌟Star！！！走起
-[![Stargazers over time](https://starchart.cc/yixiu001/serv00-login.svg?variant=adaptive)](https://starchart.cc/yixiu001/serv00-login)
+- `ct8_renew.py`：登录脚本（无头浏览器登录面板，抓取新有效期，发 TG 通知）
+- `.github/workflows/renew.yml`：定时任务
+- `time.txt`：每次运行更新的运行时间（防定时任务被停用）

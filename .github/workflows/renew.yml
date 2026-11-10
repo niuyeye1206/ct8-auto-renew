@@ -1,0 +1,85 @@
+name: ct8 自动续期
+
+on:
+  schedule:
+    - cron: '30 22 1 * *'  # 每月 1 号 UTC 22:30（北京时间次日 06:30）
+  workflow_dispatch:  # 允许手动触发
+
+permissions:
+  contents: write
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 判断本月是否需要登录续期
+        id: check
+        run: |
+          M=$(date -u +%m)
+          if [ $((10#$M % 2)) -eq 1 ]; then
+            echo "renew=true" >> "$GITHUB_OUTPUT"
+            echo "本月（${M}月，奇数月）需要登录面板续期"
+          else
+            echo "renew=false" >> "$GITHUB_OUTPUT"
+            echo "本月（${M}月，偶数月）仅保活，不登录"
+          fi
+
+      - name: 设置 Python
+        if: steps.check.outputs.renew == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        if: steps.check.outputs.renew == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyppeteer requests
+
+      - name: 登录 ct8 面板续期
+        id: renew
+        if: steps.check.outputs.renew == 'true'
+        env:
+          CT8_USERNAME: ${{ secrets.CT8_USERNAME }}
+          CT8_PASSWORD: ${{ secrets.CT8_PASSWORD }}
+          CT8_PANEL: panel.ct8.pl
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: python ct8_renew.py
+
+      - name: TG 兜底通知（脚本未发通知时才发）
+        if: failure()
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          if [ -f .tg_sent ]; then
+            echo "脚本已发过 TG 通知，跳过兜底"
+            exit 0
+          fi
+          if [ -z "$TG_BOT_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then
+            echo "未配置 TG Secrets，无法发送兜底通知"
+            exit 0
+          fi
+          MSG="ct8 自动续期：工作流异常退出，脚本未发送通知，请查看 Actions 日志。"
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -H 'Content-Type: application/json' \
+            -d "{\"chat_id\":\"${TG_CHAT_ID}\",\"text\":\"${MSG}\"}" || true
+
+      # 每月都更新 time.txt：GitHub 会在仓库 60 天无活动时停用定时任务，
+      # 每月一次提交保证定时任务一直有效。
+      - name: 更新运行时间 time.txt
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          echo "$(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M:%S')" > time.txt
+          git add time.txt
+          if git diff --cached --quiet; then
+            echo "time.txt 无变化"
+          else
+            git commit -m "⏱️ Auto Update by Github Actions $(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M:%S')"
+            git push origin main
+          fi
