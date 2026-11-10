@@ -82,17 +82,72 @@ async def login_and_get_expiry(username, password, panel):
         user_input = await page.querySelector('#id_username')
         if user_input:
             await page.evaluate('(el) => { el.value = ""; }', user_input)
+        pass_input = await page.querySelector('#id_password')
+        if pass_input:
+            await page.evaluate('(el) => { el.value = ""; }', pass_input)
         await page.type('#id_username', username)
         await page.type('#id_password', password)
+        async def is_logged_in():
+            """已登录的可靠判断：不在登录页，且（在面板首页或页面有退出登录链接）。
+            注意：只看 URL 的 path 部分，?next=/next/ 这种查询参数不算。"""
+            try:
+                url = page.url
+                path = url.split('?', 1)[0]
+                if '/login' in path:
+                    return False
+                if '/next/' in path:
+                    return True
+                return await page.evaluate(
+                    '''() => document.querySelector('a[href="/logout/"]') !== null'''
+                )
+            except Exception:
+                return False
+
+        # 依次尝试三种提交方式，直到确认已登录
         btn = await page.querySelector('form[data-login-form] button[type="submit"]')
         if not btn:
             raise Exception('找不到登录按钮')
         await btn.click()
-        try:
-            await page.waitForNavigation({'timeout': 60000})
-        except Exception:
-            pass
-        # 面板首页是 JS 渲染，等“Valid until”文本出现再宽松匹配日期
+        logged_in = False
+        for _ in range(3):
+            try:
+                await page.waitForNavigation({'timeout': 15000})
+            except Exception:
+                pass
+            if await is_logged_in():
+                logged_in = True
+                break
+            try:
+                await page.keyboard.press('Enter')
+            except Exception:
+                pass
+            await asyncio.sleep(3)
+            if await is_logged_in():
+                logged_in = True
+                break
+            try:
+                await page.evaluate(
+                    '''() => { const f = document.querySelector('form[data-login-form]'); if (f) f.submit(); }'''
+                )
+            except Exception:
+                pass
+            try:
+                await page.waitForNavigation({'timeout': 15000})
+            except Exception:
+                pass
+            await asyncio.sleep(2)
+            if await is_logged_in():
+                logged_in = True
+                break
+        if not logged_in:
+            try:
+                print(f'登录失败诊断：当前 URL={page.url}')
+                snippet = await page.evaluate('() => document.body.innerText.slice(0, 300)')
+                print(f'登录失败诊断：页面文本开头={snippet!r}')
+            except Exception:
+                pass
+            return False, ''
+        # 已登录，抓有效期
         expiry = ''
         try:
             await page.goto(f'https://{panel}/next/', {'timeout': 60000})
@@ -124,29 +179,7 @@ async def login_and_get_expiry(username, password, panel):
                 print(f'未抓到有效期，页面文本开头：{text[:400]!r}')
         except Exception as e:
             print(f'抓取有效期失败（不影响登录结果）: {e}')
-        logged_in = bool(expiry)
-        if not logged_in:
-            # 兜底：已进面板首页即算登录成功（有效期文本可能加载慢）
-            try:
-                url = page.url
-                logged_in = '/next/' in url or url.rstrip('/').endswith(panel)
-            except Exception:
-                logged_in = False
-            if not logged_in:
-                try:
-                    logged_in = await page.evaluate(
-                        '''() => document.querySelector('a[href="/logout/"]') !== null'''
-                    )
-                except Exception:
-                    logged_in = False
-        if not logged_in:
-            try:
-                print(f'登录失败诊断：当前 URL={page.url}')
-                snippet = await page.evaluate('() => document.body.innerText.slice(0, 300)')
-                print(f'登录失败诊断：页面文本开头={snippet!r}')
-            except Exception:
-                pass
-        return logged_in, expiry
+        return True, expiry
     finally:
         if page:
             await page.close()
