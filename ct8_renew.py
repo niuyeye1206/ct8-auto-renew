@@ -92,11 +92,17 @@ async def login_and_get_expiry(username, password, panel):
             await page.waitForNavigation({'timeout': 60000})
         except Exception:
             pass
-        # 到面板首页抓“Valid until ...”有效期；能抓到即登录成功
+        # 面板首页是 JS 渲染，等“Valid until”文本出现（最多 30 秒）
         expiry = ''
         try:
             await page.goto(f'https://{panel}/next/', {'timeout': 60000})
-            await asyncio.sleep(2)
+            try:
+                await page.waitForFunction(
+                    '''() => document.body.innerText.includes('Valid until')''',
+                    {'timeout': 30000},
+                )
+            except Exception:
+                pass
             text = await page.evaluate('() => document.body.innerText')
             m = re.search(r'Valid until\s+([A-Za-z]+\s+\d{1,2},\s+\d{4})', text or '')
             days = re.search(r'in\s+(\d+)\s+days', text or '')
@@ -108,13 +114,26 @@ async def login_and_get_expiry(username, password, panel):
             print(f'抓取有效期失败（不影响登录结果）: {e}')
         logged_in = bool(expiry)
         if not logged_in:
-            # 兜底：旧版面板用 logout 链接判断
+            # 兜底：已进面板首页即算登录成功（有效期文本可能加载慢）
             try:
-                logged_in = await page.evaluate(
-                    '''() => document.querySelector('a[href="/logout/"]') !== null'''
-                )
+                url = page.url
+                logged_in = '/next/' in url or url.rstrip('/').endswith(panel)
             except Exception:
                 logged_in = False
+            if not logged_in:
+                try:
+                    logged_in = await page.evaluate(
+                        '''() => document.querySelector('a[href="/logout/"]') !== null'''
+                    )
+                except Exception:
+                    logged_in = False
+        if not logged_in:
+            try:
+                print(f'登录失败诊断：当前 URL={page.url}')
+                snippet = await page.evaluate('() => document.body.innerText.slice(0, 300)')
+                print(f'登录失败诊断：页面文本开头={snippet!r}')
+            except Exception:
+                pass
         return logged_in, expiry
     finally:
         if page:
