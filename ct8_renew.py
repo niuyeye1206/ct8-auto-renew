@@ -96,6 +96,7 @@ async def login_and_get_expiry(username, password, panel):
                 return {u_len: u ? u.value.length : -1, p_len: p ? p.value.length : -1, inputs: inputs};
             }''')
             print(f"填写后检查：username 长度={dbg['u_len']}，password 长度={dbg['p_len']}，表单字段={dbg['inputs']}")
+            print(f"Secret 长度检查：CT8_USERNAME 长度={len(CT8_USERNAME)}，CT8_PASSWORD 长度={len(CT8_PASSWORD)}")
         except Exception as e:
             print(f'填写后检查失败：{e}')
         async def is_logged_in():
